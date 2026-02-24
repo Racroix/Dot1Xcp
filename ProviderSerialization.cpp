@@ -41,8 +41,25 @@ static void SetOptionalStatusText(PWSTR* ppwszOptionalStatusText, PCWSTR text)
 static void WaitAndCloseBrokerProcess(PROCESS_INFORMATION& pi, DWORD waitMs)
 {
     if (pi.hProcess) {
+        DWORD waitResult = WAIT_OBJECT_0;
         if (waitMs > 0) {
-            WaitForSingleObject(pi.hProcess, waitMs);
+            waitResult = WaitForSingleObject(pi.hProcess, waitMs);
+        }
+        if (waitResult == WAIT_TIMEOUT) {
+            CpLog(L"broker did not exit within timeout; terminating process");
+            if (!TerminateProcess(pi.hProcess, 0)) {
+                wchar_t tlog[160];
+                swprintf_s(tlog, L"TerminateProcess failed err=%u", GetLastError());
+                CpLog(tlog);
+            }
+            else {
+                WaitForSingleObject(pi.hProcess, 500);
+            }
+        }
+        else if (waitResult == WAIT_FAILED) {
+            wchar_t wlog[160];
+            swprintf_s(wlog, L"WaitForSingleObject failed err=%u", GetLastError());
+            CpLog(wlog);
         }
         CloseHandle(pi.hProcess);
         pi.hProcess = nullptr;
@@ -350,8 +367,9 @@ HRESULT testCPCredential::GetSerialization(
     PipeReadResult readResult = ReadPipeMessageUntilDone(g_session.hPipe, g_session.pi.hProcess, msgJson, 250, 1200);
 
     if (readResult == PipeReadResult::Timeout) {
+        const LONG sessionGeneration = GetBrokerSessionGeneration();
         const DWORD nextDelayMs = IsBrokerAwaitingFinal() ? 300 : 2500;
-        RequestCredentialsChangedAsync(nextDelayMs);
+        RequestCredentialsChangedAsync(nextDelayMs, sessionGeneration);
         return ReturnNoCredentialNotFinishedNoCleanup(
             pcpgsr,
             ppwszOptionalStatusText,
@@ -374,7 +392,7 @@ HRESULT testCPCredential::GetSerialization(
         {
             WaitAndCloseBrokerProcess(failedPi, 0);
             ArmForceNextAutoSubmit();
-            RequestCredentialsChangedAsync(50);
+            RequestCredentialsChangedAsync(50, GetBrokerSessionGeneration());
             return ReturnNoCredentialNotFinishedNoCleanup(
                 pcpgsr,
                 ppwszOptionalStatusText,
@@ -407,7 +425,7 @@ HRESULT testCPCredential::GetSerialization(
     if (m.type == "AUTH_PENDING") {
         SetBrokerAwaitingFinal(true);
         UpdateBrokerFlowState(1, L"AUTH_PENDING -> waiting final response");
-        RequestCredentialsChangedAsync(300);
+        RequestCredentialsChangedAsync(300, GetBrokerSessionGeneration());
         return ReturnNoCredentialNotFinishedNoCleanup(
             pcpgsr,
             ppwszOptionalStatusText,
@@ -419,7 +437,7 @@ HRESULT testCPCredential::GetSerialization(
     if (m.type == "AUTH_IDLE") {
         SetBrokerAwaitingFinal(false);
         UpdateBrokerFlowState(2, L"AUTH_IDLE -> broker idle");
-        RequestCredentialsChangedAsync(2500);
+        RequestCredentialsChangedAsync(2500, GetBrokerSessionGeneration());
         return ReturnNoCredentialNotFinishedNoCleanup(
             pcpgsr,
             ppwszOptionalStatusText,

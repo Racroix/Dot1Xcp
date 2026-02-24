@@ -153,3 +153,14 @@ dotnet publish Dot1xBroker\Dot1xBroker.csproj -c Release -f net8.0-windows
 
 참고:
 - Broker 설정 샘플은 `Dot1xBroker/README.md`의 `appsettings.json` 섹션 참조.
+
+## 14. 별도 처리 항목(분리 추적)
+- 이슈: Dot1xBroker가 장시간 실행된 상태에서 인증 성공 후 로그온은 완료되지만, 특정 타이밍에 CP가 Broker를 다시 실행하는 현상이 관찰됨
+- 현재 분류: 별도 처리(재현 조건/로그 패턴 우선 확정)
+- 우선 확인 로그:
+  - `cp.log`: `AUTH_SUCCESS -> RETURN_CREDENTIAL_FINISHED` 직후 `GetSerialization: broker session started.` 재출력 여부
+  - `broker.log`: 동일 시각 신규 프로세스 시작 흔적 여부
+- 점검 포인트:
+  - 성공 직전 예약된 `CredentialsChanged` 콜백 잔존 여부
+  - 세션 종료 시 Broker 프로세스/핸들 정리 완료 여부
+  - 타일 재선택(`SetSelected`) 경로에서 자동 제출 재진입 여부

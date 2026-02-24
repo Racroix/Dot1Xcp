@@ -159,98 +159,136 @@ static PipeReadResult ReadPipeMessageWithTimeout(HANDLE hPipe,
 {
     outMsg.clear();
     std::vector<char> buf(8192);
-    OVERLAPPED ov{};
-    ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (!ov.hEvent) {
-        wchar_t log[128];
-        swprintf_s(log, L"ReadPipeMessageWithTimeout: CreateEventW failed err=%u", GetLastError());
-        CpLog(log);
-        SecureZeroVector(buf);
-        return PipeReadResult::Failed;
-    }
+    static const size_t kMaxMsgBytes = 256 * 1024;
 
-    DWORD cbRead = 0;
-    BOOL ok = ReadFile(hPipe, buf.data(), (DWORD)buf.size() - 1, &cbRead, &ov);
-    if (ok) {
-        CloseHandle(ov.hEvent);
-        if (cbRead == 0) {
-            CpLog(L"ReadPipeMessageWithTimeout: ReadFile ok but cbRead=0");
+    for (;;) {
+        OVERLAPPED ov{};
+        ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!ov.hEvent) {
+            wchar_t log[128];
+            swprintf_s(log, L"ReadPipeMessageWithTimeout: CreateEventW failed err=%u", GetLastError());
+            CpLog(log);
             SecureZeroVector(buf);
             return PipeReadResult::Failed;
         }
-        buf[cbRead] = '\0';
-        outMsg.assign(buf.data(), cbRead);
-        SecureZeroVector(buf);
-        return PipeReadResult::Ok;
-    }
 
-    DWORD le = GetLastError();
-    if (le == ERROR_BROKEN_PIPE) {
-        CloseHandle(ov.hEvent);
-        CpLog(L"ReadPipeMessageWithTimeout: ERROR_BROKEN_PIPE");
-        SecureZeroVector(buf);
-        return PipeReadResult::BrokerExited;
-    }
+        DWORD cbRead = 0;
+        BOOL ok = ReadFile(hPipe, buf.data(), (DWORD)buf.size(), &cbRead, &ov);
+        if (ok) {
+            CloseHandle(ov.hEvent);
+            if (cbRead == 0) {
+                CpLog(L"ReadPipeMessageWithTimeout: ReadFile ok but cbRead=0");
+                SecureZeroVector(buf);
+                return PipeReadResult::Failed;
+            }
+            outMsg.append(buf.data(), cbRead);
+            SecureZeroMemory(buf.data(), cbRead);
+            if (outMsg.size() > kMaxMsgBytes) {
+                CpLog(L"ReadPipeMessageWithTimeout: message too large");
+                SecureZeroVector(buf);
+                outMsg.clear();
+                return PipeReadResult::Failed;
+            }
+            return PipeReadResult::Ok;
+        }
 
-    if (le != ERROR_IO_PENDING) {
-        wchar_t log[128];
-        swprintf_s(log, L"ReadPipeMessageWithTimeout: ReadFile failed err=%u", le);
-        CpLog(log);
-        CloseHandle(ov.hEvent);
-        SecureZeroVector(buf);
-        return PipeReadResult::Failed;
-    }
+        DWORD le = GetLastError();
+        if (le == ERROR_MORE_DATA) {
+            CloseHandle(ov.hEvent);
+            if (cbRead == 0) {
+                CpLog(L"ReadPipeMessageWithTimeout: ERROR_MORE_DATA with cbRead=0");
+                SecureZeroVector(buf);
+                return PipeReadResult::Failed;
+            }
+            outMsg.append(buf.data(), cbRead);
+            SecureZeroMemory(buf.data(), cbRead);
+            if (outMsg.size() > kMaxMsgBytes) {
+                CpLog(L"ReadPipeMessageWithTimeout: message too large");
+                SecureZeroVector(buf);
+                outMsg.clear();
+                return PipeReadResult::Failed;
+            }
+            continue;
+        }
 
-    HANDLE waits[2] = { ov.hEvent, hBrokerProcess };
-    DWORD waitCount = hBrokerProcess ? 2 : 1;
-    DWORD wr = WaitForMultipleObjects(waitCount, waits, FALSE, timeoutMs);
+        if (le == ERROR_BROKEN_PIPE) {
+            CloseHandle(ov.hEvent);
+            CpLog(L"ReadPipeMessageWithTimeout: ERROR_BROKEN_PIPE");
+            SecureZeroVector(buf);
+            return PipeReadResult::BrokerExited;
+        }
 
-    if (wr == WAIT_OBJECT_0) {
-        DWORD transferred = 0;
-        BOOL done = GetOverlappedResult(hPipe, &ov, &transferred, FALSE);
-        DWORD gle = done ? ERROR_SUCCESS : GetLastError();
-        CloseHandle(ov.hEvent);
-        if (!done) {
+        if (le != ERROR_IO_PENDING) {
+            wchar_t log[128];
+            swprintf_s(log, L"ReadPipeMessageWithTimeout: ReadFile failed err=%u", le);
+            CpLog(log);
+            CloseHandle(ov.hEvent);
+            SecureZeroVector(buf);
+            return PipeReadResult::Failed;
+        }
+
+        HANDLE waits[2] = { ov.hEvent, hBrokerProcess };
+        DWORD waitCount = hBrokerProcess ? 2 : 1;
+        DWORD wr = WaitForMultipleObjects(waitCount, waits, FALSE, timeoutMs);
+
+        if (wr == WAIT_OBJECT_0) {
+            DWORD transferred = 0;
+            BOOL done = GetOverlappedResult(hPipe, &ov, &transferred, FALSE);
+            DWORD gle = done ? ERROR_SUCCESS : GetLastError();
+            CloseHandle(ov.hEvent);
+
+            if (done || gle == ERROR_MORE_DATA) {
+                if (transferred == 0) {
+                    CpLog(L"ReadPipeMessageWithTimeout: transferred=0");
+                    SecureZeroVector(buf);
+                    return PipeReadResult::Failed;
+                }
+                outMsg.append(buf.data(), transferred);
+                SecureZeroMemory(buf.data(), transferred);
+                if (outMsg.size() > kMaxMsgBytes) {
+                    CpLog(L"ReadPipeMessageWithTimeout: message too large");
+                    SecureZeroVector(buf);
+                    outMsg.clear();
+                    return PipeReadResult::Failed;
+                }
+                if (done) {
+                    return PipeReadResult::Ok;
+                }
+                continue;
+            }
+
             if (gle == ERROR_BROKEN_PIPE) {
                 CpLog(L"ReadPipeMessageWithTimeout: GetOverlappedResult ERROR_BROKEN_PIPE");
                 SecureZeroVector(buf);
                 return PipeReadResult::BrokerExited;
             }
+
             wchar_t log[128];
             swprintf_s(log, L"ReadPipeMessageWithTimeout: GetOverlappedResult failed err=%u", gle);
             CpLog(log);
             SecureZeroVector(buf);
             return PipeReadResult::Failed;
         }
-        if (transferred == 0) {
-            CpLog(L"ReadPipeMessageWithTimeout: transferred=0");
+
+        if (wr == WAIT_OBJECT_0 + 1) {
+            CancelIoEx(hPipe, &ov);
+            CloseHandle(ov.hEvent);
             SecureZeroVector(buf);
-            return PipeReadResult::Failed;
+            return PipeReadResult::BrokerExited;
         }
-        buf[transferred] = '\0';
-        outMsg.assign(buf.data(), transferred);
-        SecureZeroVector(buf);
-        return PipeReadResult::Ok;
-    }
 
-    if (wr == WAIT_OBJECT_0 + 1) {
+        if (wr == WAIT_TIMEOUT) {
+            CancelIoEx(hPipe, &ov);
+            CloseHandle(ov.hEvent);
+            SecureZeroVector(buf);
+            return PipeReadResult::Timeout;
+        }
+
         CancelIoEx(hPipe, &ov);
         CloseHandle(ov.hEvent);
         SecureZeroVector(buf);
-        return PipeReadResult::BrokerExited;
+        return PipeReadResult::Failed;
     }
-
-    if (wr == WAIT_TIMEOUT) {
-        CancelIoEx(hPipe, &ov);
-        CloseHandle(ov.hEvent);
-        SecureZeroVector(buf);
-        return PipeReadResult::Timeout;
-    }
-
-    CancelIoEx(hPipe, &ov);
-    CloseHandle(ov.hEvent);
-    SecureZeroVector(buf);
-    return PipeReadResult::Failed;
 }
 
 PipeReadResult ReadPipeMessageUntilDone(HANDLE hPipe, HANDLE hBrokerProcess, std::string& outMsg, DWORD sliceTimeoutMs, DWORD overallTimeoutMs)
