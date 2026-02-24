@@ -18,8 +18,13 @@ void SetBrokerSessionActive(bool active);
 bool IsBrokerAwaitingFinal();
 void SetBrokerAwaitingFinal(bool awaiting);
 LONG GetBrokerSessionGeneration();
+bool TryAcquireAutoSubmitWindow(DWORD minIntervalMs);
+void MarkAutoSubmitTickNow();
 void ArmForceNextAutoSubmit();
+void ResetForceNextAutoSubmit();
 bool ConsumeForceNextAutoSubmit();
+void SetProviderEvents(ICredentialProviderEvents* events, UINT_PTR context);
+void ClearProviderEvents();
 void CloseBrokerSessionNow(DWORD waitMs, PCWSTR reasonLog);
 void RequestCredentialsChangedAsync(DWORD delayMs, LONG sessionGeneration);
 

@@ -6,6 +6,7 @@
 #include "ProviderUtil.h"
 #include "ProviderPipe.h"
 #include "ProviderJson.h"
+#include "ProviderBrokerSession.h"
 
 #include <string>
 
@@ -18,7 +19,6 @@ static const wchar_t* kMsgBrokerExited = L"broker exited unexpectedly";
 static const wchar_t* kMsgParseFail = L"response parse failed";
 static const wchar_t* kMsgAuthFail = L"authentication failed";
 static const wchar_t* kMsgSerializeNA = L"serialization not implemented";
-static LONG g_lastBrokerFlowState = 0; // 0:none, 1:pending, 2:idle
 
 struct SensitiveBrokerMessageGuard
 {
@@ -35,44 +35,6 @@ static void SetOptionalStatusText(PWSTR* ppwszOptionalStatusText, PCWSTR text)
 {
     if (ppwszOptionalStatusText) {
         *ppwszOptionalStatusText = DupSysAlloc(text);
-    }
-}
-
-static void WaitAndCloseBrokerProcess(PROCESS_INFORMATION& pi, DWORD waitMs)
-{
-    if (pi.hProcess) {
-        DWORD waitResult = WaitForSingleObject(pi.hProcess, waitMs);
-        if (waitResult == WAIT_TIMEOUT) {
-            CpLog(L"broker did not exit within timeout; terminating process");
-            if (!TerminateProcess(pi.hProcess, 0)) {
-                wchar_t tlog[160];
-                swprintf_s(tlog, L"TerminateProcess failed err=%u", GetLastError());
-                CpLog(tlog);
-            }
-            else {
-                WaitForSingleObject(pi.hProcess, 500);
-            }
-        }
-        else if (waitResult == WAIT_FAILED) {
-            wchar_t wlog[160];
-            swprintf_s(wlog, L"WaitForSingleObject failed err=%u", GetLastError());
-            CpLog(wlog);
-        }
-        CloseHandle(pi.hProcess);
-        pi.hProcess = nullptr;
-    }
-
-    if (pi.hThread) {
-        CloseHandle(pi.hThread);
-        pi.hThread = nullptr;
-    }
-}
-
-static void ClosePipeHandle(HANDLE& hPipe)
-{
-    if (hPipe != INVALID_HANDLE_VALUE) {
-        CloseHandle(hPipe);
-        hPipe = INVALID_HANDLE_VALUE;
     }
 }
 
@@ -234,55 +196,6 @@ static HRESULT HandleParsedBrokerMessage(
     );
 }
 
-struct BrokerSessionState
-{
-    HANDLE hPipe = INVALID_HANDLE_VALUE;
-    PROCESS_INFORMATION pi{};
-    bool connected = false;
-};
-
-static BrokerSessionState g_session;
-
-static void UpdateBrokerFlowState(LONG state, PCWSTR transitionLog)
-{
-    LONG prev = InterlockedExchange(&g_lastBrokerFlowState, state);
-    if (transitionLog && prev != state) {
-        CpLog(transitionLog);
-    }
-}
-
-static void ResetBrokerSession(DWORD waitMs)
-{
-    ClosePipeHandle(g_session.hPipe);
-    WaitAndCloseBrokerProcess(g_session.pi, waitMs);
-    ZeroMemory(&g_session.pi, sizeof(g_session.pi));
-    g_session.connected = false;
-    SetBrokerSessionActive(false);
-    UpdateBrokerFlowState(0, nullptr);
-}
-
-void CloseBrokerSessionNow(DWORD waitMs, PCWSTR reasonLog)
-{
-    if (reasonLog && *reasonLog) {
-        CpLog(reasonLog);
-    }
-
-    if (g_session.hPipe != INVALID_HANDLE_VALUE ||
-        g_session.pi.hProcess ||
-        g_session.pi.hThread ||
-        g_session.connected)
-    {
-        ResetBrokerSession(waitMs);
-    }
-    else
-    {
-        SetBrokerSessionActive(false);
-    }
-
-    SetBrokerAwaitingFinal(false);
-    UpdateBrokerFlowState(0, nullptr);
-}
-
 static HRESULT ReturnNoCredentialNotFinishedNoCleanup(
     CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE* pcpgsr,
     PWSTR* ppwszOptionalStatusText,
@@ -308,22 +221,25 @@ HRESULT testCPCredential::GetSerialization(
     if (pcpsi) *pcpsi = CPSI_NONE;
     if (ppwszOptionalStatusText) *ppwszOptionalStatusText = nullptr;
 
-    if (g_session.hPipe == INVALID_HANDLE_VALUE || !g_session.pi.hProcess) {
+    BrokerSessionScopedLock lock;
+    BrokerSessionState& session = GetBrokerSession();
+
+    if (session.hPipe == INVALID_HANDLE_VALUE || !session.pi.hProcess) {
         std::wstring pipeName = MakePipeName();
-        g_session.hPipe = CreateRestrictedPipeServer(pipeName);
-        if (g_session.hPipe == INVALID_HANDLE_VALUE) {
+        session.hPipe = CreateRestrictedPipeServer(pipeName);
+        if (session.hPipe == INVALID_HANDLE_VALUE) {
             SetOptionalStatusText(ppwszOptionalStatusText, kMsgPipeCreateFail);
             *pcpgsr = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
 
             DWORD err = GetLastError();
-            wchar_t log[256];
-            swprintf_s(log, L"pipe create failed (err=%u)", err);
-            CpLog(log);
+            wchar_t logMsg[256];
+            swprintf_s(logMsg, L"pipe create failed (err=%u)", err);
+            CpLog(logMsg);
             return S_OK;
         }
 
         std::wstring err;
-        if (!LaunchBroker(pipeName, g_session.pi, err)) {
+        if (!LaunchBroker(pipeName, session.pi, err)) {
             ResetBrokerSession(0);
             return ReturnNoCredentialNotFinishedNoCleanup(
                 pcpgsr,
@@ -334,12 +250,12 @@ HRESULT testCPCredential::GetSerialization(
         }
 
         const DWORD CONNECT_TIMEOUT_MS = 2000;
-        PipeConnectResult connectResult = WaitPipeClientConnect(g_session.hPipe, g_session.pi.hProcess, CONNECT_TIMEOUT_MS);
+        PipeConnectResult connectResult = WaitPipeClientConnect(session.hPipe, session.pi.hProcess, CONNECT_TIMEOUT_MS);
         if (connectResult != PipeConnectResult::Connected) {
-            PROCESS_INFORMATION failedPi = g_session.pi;
-            ZeroMemory(&g_session.pi, sizeof(g_session.pi));
-            ClosePipeHandle(g_session.hPipe);
-            g_session.connected = false;
+            PROCESS_INFORMATION failedPi = session.pi;
+            ZeroMemory(&session.pi, sizeof(session.pi));
+            ClosePipeHandle(session.hPipe);
+            session.connected = false;
             SetBrokerSessionActive(false);
             return ReturnNoCredentialNotFinished(
                 failedPi,
@@ -351,7 +267,7 @@ HRESULT testCPCredential::GetSerialization(
             );
         }
 
-        g_session.connected = true;
+        session.connected = true;
         SetBrokerSessionActive(true);
         SetBrokerAwaitingFinal(false);
         UpdateBrokerFlowState(0, nullptr);
@@ -361,7 +277,7 @@ HRESULT testCPCredential::GetSerialization(
     std::string msgJson;
     Msg m{};
     SensitiveBrokerMessageGuard sensitiveGuard{ msgJson, m };
-    PipeReadResult readResult = ReadPipeMessageUntilDone(g_session.hPipe, g_session.pi.hProcess, msgJson, 250, 1200);
+    PipeReadResult readResult = ReadPipeMessageUntilDone(session.hPipe, session.pi.hProcess, msgJson, 250, 1200);
 
     if (readResult == PipeReadResult::Timeout) {
         const LONG sessionGeneration = GetBrokerSessionGeneration();
@@ -376,10 +292,10 @@ HRESULT testCPCredential::GetSerialization(
     }
 
     if (readResult != PipeReadResult::Ok || msgJson.empty()) {
-        PROCESS_INFORMATION failedPi = g_session.pi;
-        ZeroMemory(&g_session.pi, sizeof(g_session.pi));
-        ClosePipeHandle(g_session.hPipe);
-        g_session.connected = false;
+        PROCESS_INFORMATION failedPi = session.pi;
+        ZeroMemory(&session.pi, sizeof(session.pi));
+        ClosePipeHandle(session.hPipe);
+        session.connected = false;
         SetBrokerSessionActive(false);
         SetBrokerAwaitingFinal(false);
         UpdateBrokerFlowState(0, nullptr);
@@ -443,10 +359,10 @@ HRESULT testCPCredential::GetSerialization(
         );
     }
 
-    PROCESS_INFORMATION terminalPi = g_session.pi;
-    ZeroMemory(&g_session.pi, sizeof(g_session.pi));
-    ClosePipeHandle(g_session.hPipe);
-    g_session.connected = false;
+    PROCESS_INFORMATION terminalPi = session.pi;
+    ZeroMemory(&session.pi, sizeof(session.pi));
+    ClosePipeHandle(session.hPipe);
+    session.connected = false;
     SetBrokerSessionActive(false);
     SetBrokerAwaitingFinal(false);
     UpdateBrokerFlowState(0, nullptr);
