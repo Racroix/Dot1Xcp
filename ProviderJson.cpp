@@ -117,27 +117,124 @@ static bool UnescapeJsonString(const std::string& in, std::string& out)
     return true;
 }
 
-static bool ExtractJsonString(const std::string& obj, const char* key, std::string& outVal)
+static void SkipWs(const std::string& s, size_t& i)
 {
-    std::string pat = std::string("\"") + key + "\":";
-    auto p = obj.find(pat);
-    if (p == std::string::npos) return false;
-    p += pat.size();
-    while (p < obj.size() && (obj[p] == ' ' || obj[p] == '\t')) ++p;
-    if (p >= obj.size() || obj[p] != '"') return false;
-    ++p;
-
-    size_t q = p;
-    while (q < obj.size() && obj[q] != '"') {
-        if (obj[q] == '\\' && q + 1 < obj.size()) { q += 2; continue; }
-        ++q;
+    while (i < s.size() &&
+           (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n')) {
+        ++i;
     }
-    if (q >= obj.size()) return false;
+}
 
-    std::string token = obj.substr(p, q - p);
-    bool ok = UnescapeJsonString(token, outVal);
-    SecureClearString(token);
-    return ok;
+static bool ParseJsonQuotedToken(const std::string& s, size_t& i, std::string& rawToken)
+{
+    rawToken.clear();
+    if (i >= s.size() || s[i] != '"') return false;
+    ++i;
+
+    size_t start = i;
+    bool escaped = false;
+    while (i < s.size()) {
+        char c = s[i];
+        if (escaped) {
+            escaped = false;
+            ++i;
+            continue;
+        }
+        if (c == '\\') {
+            escaped = true;
+            ++i;
+            continue;
+        }
+        if (c == '"') {
+            break;
+        }
+        ++i;
+    }
+    if (i >= s.size() || s[i] != '"') return false;
+    rawToken = s.substr(start, i - start);
+    ++i;
+    return true;
+}
+
+static bool ParseFlatBrokerMessage(const std::string& obj, Msg& out)
+{
+    size_t i = 0;
+    SkipWs(obj, i);
+    if (i >= obj.size() || obj[i] != '{') return false;
+    ++i;
+
+    bool hasType = false;
+    while (true) {
+        SkipWs(obj, i);
+        if (i >= obj.size()) return false;
+        if (obj[i] == '}') {
+            ++i;
+            break;
+        }
+
+        std::string keyRaw;
+        if (!ParseJsonQuotedToken(obj, i, keyRaw)) return false;
+        std::string key;
+        if (!UnescapeJsonString(keyRaw, key)) {
+            SecureClearString(keyRaw);
+            return false;
+        }
+        SecureClearString(keyRaw);
+
+        SkipWs(obj, i);
+        if (i >= obj.size() || obj[i] != ':') {
+            SecureClearString(key);
+            return false;
+        }
+        ++i;
+        SkipWs(obj, i);
+
+        std::string valueRaw;
+        if (!ParseJsonQuotedToken(obj, i, valueRaw)) {
+            SecureClearString(key);
+            return false;
+        }
+        std::string value;
+        bool okValue = UnescapeJsonString(valueRaw, value);
+        SecureClearString(valueRaw);
+        if (!okValue) {
+            SecureClearString(key);
+            return false;
+        }
+
+        if (key == "type") {
+            SecureClearString(out.type);
+            out.type.swap(value);
+            hasType = true;
+        } else if (key == "sam") {
+            SecureClearString(out.sam);
+            out.sam.swap(value);
+        } else if (key == "password") {
+            SecureClearString(out.password);
+            out.password.swap(value);
+        } else if (key == "reason") {
+            SecureClearString(out.reason);
+            out.reason.swap(value);
+        }
+        SecureClearString(value);
+        SecureClearString(key);
+
+        SkipWs(obj, i);
+        if (i >= obj.size()) return false;
+        if (obj[i] == ',') {
+            ++i;
+            continue;
+        }
+        if (obj[i] == '}') {
+            ++i;
+            break;
+        }
+        return false;
+    }
+
+    SkipWs(obj, i);
+    if (i != obj.size()) return false;
+    return hasType;
 }
 
 bool ParseJsonLine(const std::string& line, Msg& out)
@@ -148,18 +245,12 @@ bool ParseJsonLine(const std::string& line, Msg& out)
         SecureClearString(s);
         return false;
     }
-    if (s.front() != '{' || s.back() != '}') {
-        SecureClearString(s);
-        return false;
-    }
-    if (!ExtractJsonString(s, "type", out.type)) {
-        SecureClearString(s);
+
+    bool ok = ParseFlatBrokerMessage(s, out);
+    SecureClearString(s);
+    if (!ok || out.type.empty()) {
         SecureClearMsg(out);
         return false;
     }
-    ExtractJsonString(s, "sam", out.sam);
-    ExtractJsonString(s, "password", out.password);
-    ExtractJsonString(s, "reason", out.reason);
-    SecureClearString(s);
     return true;
 }

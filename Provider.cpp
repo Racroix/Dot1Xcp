@@ -42,6 +42,18 @@ static bool IsCurrentSessionGeneration(LONG generation)
     return generation == GetBrokerSessionGeneration();
 }
 
+static bool TryAcquireAutoSubmitWindow(DWORD minIntervalMs)
+{
+    const DWORD nowTick = GetTickCount();
+    const DWORD lastTick = (DWORD)InterlockedCompareExchange(&g_brokerSessionAutoSubmitTick, 0, 0);
+    const DWORD elapsed = nowTick - lastTick;
+    if (lastTick == 0 || elapsed >= minIntervalMs) {
+        InterlockedExchange(&g_brokerSessionAutoSubmitTick, (LONG)nowTick);
+        return true;
+    }
+    return false;
+}
+
 static DWORD WINAPI CredRefreshThreadProc(LPVOID param)
 {
     std::unique_ptr<CredRefreshAsyncCtx> ctx(reinterpret_cast<CredRefreshAsyncCtx*>(param));
@@ -345,6 +357,8 @@ IFACEMETHODIMP testCPCredential::UnAdvise() { return S_OK; }
 
 IFACEMETHODIMP testCPCredential::SetSelected(BOOL* pbAutoLogon)
 {
+    static const DWORD kMinSubmitIntervalMs = 2500;
+
     const bool isLogonScenario = (_cpus == CPUS_LOGON);
     const bool brokerActive = IsBrokerSessionActive();
     const bool awaitingFinal = IsBrokerAwaitingFinal();
@@ -356,14 +370,7 @@ IFACEMETHODIMP testCPCredential::SetSelected(BOOL* pbAutoLogon)
             if (awaitingFinal) {
                 shouldAutoSubmit = true;
             } else {
-                const DWORD nowTick = GetTickCount();
-                const DWORD lastTick = (DWORD)InterlockedCompareExchange(&g_brokerSessionAutoSubmitTick, 0, 0);
-                const DWORD elapsed = nowTick - lastTick;
-                const DWORD kMinSessionSubmitIntervalMs = 2500;
-                if (lastTick == 0 || elapsed >= kMinSessionSubmitIntervalMs) {
-                    InterlockedExchange(&g_brokerSessionAutoSubmitTick, (LONG)nowTick);
-                    shouldAutoSubmit = true;
-                }
+                shouldAutoSubmit = TryAcquireAutoSubmitWindow(kMinSubmitIntervalMs);
             }
         } else {
             forceConsumed = ConsumeForceNextAutoSubmit();
@@ -371,14 +378,7 @@ IFACEMETHODIMP testCPCredential::SetSelected(BOOL* pbAutoLogon)
                 InterlockedExchange(&g_brokerSessionAutoSubmitTick, (LONG)GetTickCount());
                 shouldAutoSubmit = true;
             } else {
-                const DWORD nowTick = GetTickCount();
-                const DWORD lastTick = (DWORD)InterlockedCompareExchange(&g_brokerSessionAutoSubmitTick, 0, 0);
-                const DWORD elapsed = nowTick - lastTick;
-                const DWORD kMinInactiveSubmitIntervalMs = 2500;
-                if (lastTick == 0 || elapsed >= kMinInactiveSubmitIntervalMs) {
-                    InterlockedExchange(&g_brokerSessionAutoSubmitTick, (LONG)nowTick);
-                    shouldAutoSubmit = true;
-                }
+                shouldAutoSubmit = TryAcquireAutoSubmitWindow(kMinSubmitIntervalMs);
             }
         }
     }
