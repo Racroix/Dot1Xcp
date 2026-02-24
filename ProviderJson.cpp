@@ -7,7 +7,6 @@ void SecureClearString(std::string& s)
         SecureZeroMemory(&s[0], s.size());
     }
     s.clear();
-    s.shrink_to_fit();
 }
 
 void SecureClearMsg(Msg& m)

@@ -1,23 +1,8 @@
 #include "pch.h"
 #include "ProviderUtil.h"
-#include "CpLog.h"
 
 #include <shlwapi.h>
 #include <wtsapi32.h>
-
-bool HasRecentUserInput(DWORD maxIdleMs)
-{
-    LASTINPUTINFO lii{};
-    lii.cbSize = sizeof(lii);
-    if (!GetLastInputInfo(&lii)) {
-        CpLog(L"HasRecentUserInput: GetLastInputInfo failed");
-        return false;
-    }
-
-    DWORD now = GetTickCount();
-    DWORD idle = now - lii.dwTime;
-    return idle <= maxIdleMs;
-}
 
 bool HasActiveConsoleUser()
 {
