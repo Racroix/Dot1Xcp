@@ -85,17 +85,37 @@ static bool ResolvePkgA(const char* name, ULONG& id) {
     swprintf_s(log, L"ResolvePkgA: Found package '%S', ID=%lu. Success.", name, t);
     CpLog(log);
     closeLsa();
-    id = t; 
+    id = t;
+    return true;
+}
+
+static volatile LONG g_cachedKerberosPkg = 0;
+static volatile LONG g_cachedMsvPkg = 0;
+
+static bool ResolvePkgCached(const char* name, volatile LONG& cacheSlot, ULONG& id)
+{
+    LONG cached = InterlockedCompareExchange(&cacheSlot, 0, 0);
+    if (cached > 0) {
+        id = (ULONG)cached;
+        return true;
+    }
+
+    ULONG resolved = 0;
+    if (!ResolvePkgA(name, resolved)) {
+        return false;
+    }
+
+    LONG prior = InterlockedCompareExchange(&cacheSlot, (LONG)resolved, 0);
+    id = (prior > 0) ? (ULONG)prior : resolved;
     return true;
 }
 
 // --- ResolveNegotiate 함수 수정 ("Kerberos"로 변경) ---
-static bool ResolveNegotiate(ULONG& id) { 
+static bool ResolveNegotiate(ULONG& id) {
     CpLog(L"ResolveNegotiate: Looking up 'Kerberos' package...");
-    // "Negotiate" 대신 "Kerberos"를 직접 찾습니다.
-    return ResolvePkgA("Kerberos", id); 
+    return ResolvePkgCached("Kerberos", g_cachedKerberosPkg, id);
 }
-static bool ResolveMsv(ULONG& id) { return ResolvePkgA(MICROSOFT_AUTHENTICATION_PACKAGE_V1_0, id); }
+static bool ResolveMsv(ULONG& id) { return ResolvePkgCached(MICROSOFT_AUTHENTICATION_PACKAGE_V1_0, g_cachedMsvPkg, id); }
 
 // Unlock용 LogonId(LUID) 얻기: 콘솔 세션 사용자 토큰의 AuthenticationId
 static bool GetConsoleLogonId(LUID* out) {

@@ -41,10 +41,7 @@ static void SetOptionalStatusText(PWSTR* ppwszOptionalStatusText, PCWSTR text)
 static void WaitAndCloseBrokerProcess(PROCESS_INFORMATION& pi, DWORD waitMs)
 {
     if (pi.hProcess) {
-        DWORD waitResult = WAIT_OBJECT_0;
-        if (waitMs > 0) {
-            waitResult = WaitForSingleObject(pi.hProcess, waitMs);
-        }
+        DWORD waitResult = WaitForSingleObject(pi.hProcess, waitMs);
         if (waitResult == WAIT_TIMEOUT) {
             CpLog(L"broker did not exit within timeout; terminating process");
             if (!TerminateProcess(pi.hProcess, 0)) {

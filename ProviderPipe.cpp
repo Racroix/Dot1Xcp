@@ -336,7 +336,30 @@ bool LaunchBroker(const std::wstring& pipeName, PROCESS_INFORMATION& piOut, std:
     cmd += pipeName;
     CpLog((L"launch broker cmd: " + cmd).c_str());
 
-    SetEnvironmentVariableW(L"CP_PIPE", pipeName.c_str());
+    std::vector<wchar_t> prevPipeBuf;
+    DWORD prevPipeLen = GetEnvironmentVariableW(L"CP_PIPE", nullptr, 0);
+    bool hadPrevPipe = (prevPipeLen > 0);
+    if (hadPrevPipe) {
+        prevPipeBuf.resize(prevPipeLen);
+        if (GetEnvironmentVariableW(L"CP_PIPE", prevPipeBuf.data(), prevPipeLen) == 0) {
+            hadPrevPipe = false;
+        }
+    }
+
+    auto restorePipeEnv = [&]() {
+        if (hadPrevPipe) {
+            SetEnvironmentVariableW(L"CP_PIPE", prevPipeBuf.data());
+        }
+        else {
+            SetEnvironmentVariableW(L"CP_PIPE", nullptr);
+        }
+    };
+
+    if (!SetEnvironmentVariableW(L"CP_PIPE", pipeName.c_str())) {
+        wchar_t log[160];
+        swprintf_s(log, L"SetEnvironmentVariable(CP_PIPE) failed err=%u", GetLastError());
+        CpLog(log);
+    }
 
     STARTUPINFOW si{};
     si.cb = sizeof(si);
@@ -367,6 +390,7 @@ bool LaunchBroker(const std::wstring& pipeName, PROCESS_INFORMATION& piOut, std:
             }
         }
     }
+    restorePipeEnv();
     if (!ok) {
         DWORD le = GetLastError();
         wchar_t tmp[128];
