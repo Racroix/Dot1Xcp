@@ -17,10 +17,11 @@ bool IsBrokerSessionActive();
 void SetBrokerSessionActive(bool active);
 bool IsBrokerAwaitingFinal();
 void SetBrokerAwaitingFinal(bool awaiting);
+LONG GetBrokerSessionGeneration();
 void ArmForceNextAutoSubmit();
 bool ConsumeForceNextAutoSubmit();
 void CloseBrokerSessionNow(DWORD waitMs, PCWSTR reasonLog);
-void RequestCredentialsChangedAsync(DWORD delayMs);
+void RequestCredentialsChangedAsync(DWORD delayMs, LONG sessionGeneration);
 
 // ======================= Provider =======================
 class testCPProvider : public ICredentialProvider {

@@ -19,24 +19,54 @@ static LONG g_refreshPending = 0;
 static LONG g_brokerSessionAutoSubmitTick = 0;
 static LONG g_forceNextAutoSubmit = 0;
 static LONG g_lastSetSelectedDecision = -1;
+static LONG g_brokerSessionGeneration = 1;
 static ICredentialProviderEvents* g_cpEvents = nullptr;
 static UINT_PTR g_cpEventsContext = 0;
+static SRWLOCK g_cpEventsLock = SRWLOCK_INIT;
 
 struct CredRefreshAsyncCtx
 {
     ICredentialProviderEvents* events;
     UINT_PTR context;
     DWORD delayMs;
+    LONG sessionGeneration;
 };
+
+LONG GetBrokerSessionGeneration()
+{
+    return InterlockedCompareExchange(&g_brokerSessionGeneration, 0, 0);
+}
+
+static bool IsCurrentSessionGeneration(LONG generation)
+{
+    return generation == GetBrokerSessionGeneration();
+}
 
 static DWORD WINAPI CredRefreshThreadProc(LPVOID param)
 {
     std::unique_ptr<CredRefreshAsyncCtx> ctx(reinterpret_cast<CredRefreshAsyncCtx*>(param));
-    if (!ctx || !ctx->events)
+    if (!ctx || !ctx->events) {
+        InterlockedExchange(&g_refreshPending, 0);
         return 0;
+    }
 
-    if (ctx->delayMs > 0) Sleep(ctx->delayMs);
-    ctx->events->CredentialsChanged(ctx->context);
+    DWORD waited = 0;
+    while (waited < ctx->delayMs) {
+        if (!IsCurrentSessionGeneration(ctx->sessionGeneration)) {
+            ctx->events->Release();
+            InterlockedExchange(&g_refreshPending, 0);
+            return 0;
+        }
+
+        DWORD remaining = ctx->delayMs - waited;
+        DWORD sleepSlice = (remaining < 50) ? remaining : 50;
+        Sleep(sleepSlice);
+        waited += sleepSlice;
+    }
+
+    if (IsCurrentSessionGeneration(ctx->sessionGeneration)) {
+        ctx->events->CredentialsChanged(ctx->context);
+    }
     ctx->events->Release();
     InterlockedExchange(&g_refreshPending, 0);
     return 0;
@@ -53,6 +83,7 @@ void SetBrokerSessionActive(bool active)
     if (!active) {
         InterlockedExchange(&g_brokerAwaitingFinal, 0);
         InterlockedExchange(&g_brokerSessionAutoSubmitTick, 0);
+        InterlockedIncrement(&g_brokerSessionGeneration);
     }
 }
 
@@ -80,19 +111,31 @@ bool ConsumeForceNextAutoSubmit()
     return InterlockedCompareExchange(&g_forceNextAutoSubmit, 0, 1) == 1;
 }
 
-void RequestCredentialsChangedAsync(DWORD delayMs)
+void RequestCredentialsChangedAsync(DWORD delayMs, LONG sessionGeneration)
 {
+    if (sessionGeneration <= 0) {
+        sessionGeneration = GetBrokerSessionGeneration();
+    }
+
     if (InterlockedCompareExchange(&g_refreshPending, 1, 0) != 0)
         return;
 
-    ICredentialProviderEvents* events = g_cpEvents;
+    ICredentialProviderEvents* events = nullptr;
+    UINT_PTR context = 0;
+    AcquireSRWLockShared(&g_cpEventsLock);
+    events = g_cpEvents;
+    context = g_cpEventsContext;
+    if (events) {
+        events->AddRef();
+    }
+    ReleaseSRWLockShared(&g_cpEventsLock);
+
     if (!events) {
         InterlockedExchange(&g_refreshPending, 0);
         return;
     }
 
-    events->AddRef();
-    auto* ctx = new(std::nothrow) CredRefreshAsyncCtx{ events, g_cpEventsContext, delayMs };
+    auto* ctx = new(std::nothrow) CredRefreshAsyncCtx{ events, context, delayMs, sessionGeneration };
     if (!ctx) {
         events->Release();
         InterlockedExchange(&g_refreshPending, 0);
@@ -164,23 +207,29 @@ HRESULT testCPProvider::SetUsageScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus
 HRESULT testCPProvider::SetSerialization(const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION*) { return E_NOTIMPL; }
 HRESULT testCPProvider::Advise(ICredentialProviderEvents* pcpe, UINT_PTR upAdviseContext)
 {
+    AcquireSRWLockExclusive(&g_cpEventsLock);
     if (g_cpEvents) {
         g_cpEvents->Release();
         g_cpEvents = nullptr;
     }
     g_cpEventsContext = upAdviseContext;
     g_cpEvents = pcpe;
-    if (g_cpEvents) g_cpEvents->AddRef();
+    if (g_cpEvents) {
+        g_cpEvents->AddRef();
+    }
+    ReleaseSRWLockExclusive(&g_cpEventsLock);
     return S_OK;
 }
 
 HRESULT testCPProvider::UnAdvise()
 {
+    AcquireSRWLockExclusive(&g_cpEventsLock);
     if (g_cpEvents) {
         g_cpEvents->Release();
         g_cpEvents = nullptr;
     }
     g_cpEventsContext = 0;
+    ReleaseSRWLockExclusive(&g_cpEventsLock);
     return S_OK;
 }
 
@@ -319,9 +368,17 @@ IFACEMETHODIMP testCPCredential::SetSelected(BOOL* pbAutoLogon)
         } else {
             forceConsumed = ConsumeForceNextAutoSubmit();
             if (forceConsumed) {
+                InterlockedExchange(&g_brokerSessionAutoSubmitTick, (LONG)GetTickCount());
                 shouldAutoSubmit = true;
             } else {
-                shouldAutoSubmit = true;
+                const DWORD nowTick = GetTickCount();
+                const DWORD lastTick = (DWORD)InterlockedCompareExchange(&g_brokerSessionAutoSubmitTick, 0, 0);
+                const DWORD elapsed = nowTick - lastTick;
+                const DWORD kMinInactiveSubmitIntervalMs = 2500;
+                if (lastTick == 0 || elapsed >= kMinInactiveSubmitIntervalMs) {
+                    InterlockedExchange(&g_brokerSessionAutoSubmitTick, (LONG)nowTick);
+                    shouldAutoSubmit = true;
+                }
             }
         }
     }

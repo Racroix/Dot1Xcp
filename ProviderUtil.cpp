@@ -96,8 +96,12 @@ std::wstring Widen(const std::string& u8)
 {
     if (u8.empty()) return std::wstring();
     int wlen = MultiByteToWideChar(CP_UTF8, 0, u8.c_str(), (int)u8.size(), nullptr, 0);
+    if (wlen <= 0) return std::wstring();
     std::wstring w;
     w.resize(wlen);
-    MultiByteToWideChar(CP_UTF8, 0, u8.c_str(), (int)u8.size(), &w[0], wlen);
+    int converted = MultiByteToWideChar(CP_UTF8, 0, u8.c_str(), (int)u8.size(), &w[0], wlen);
+    if (converted <= 0) {
+        w.clear();
+    }
     return w;
 }
