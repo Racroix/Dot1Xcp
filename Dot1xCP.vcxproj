@@ -148,10 +148,12 @@
     <ClInclude Include="CpLog.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="ProviderBrokerSession.h" />
     <ClInclude Include="Provider.h" />
     <ClInclude Include="ProviderJson.h" />
     <ClInclude Include="ProviderPipe.h" />
     <ClInclude Include="ProviderUtil.h" />
+    <ClInclude Include="SerializationAuth.h" />
     <ClInclude Include="Serialization.h" />
     <ClInclude Include="SimpleCpGuids.h" />
   </ItemGroup>
@@ -165,11 +167,15 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Provider.cpp" />
+    <ClCompile Include="ProviderBrokerSession.cpp" />
+    <ClCompile Include="ProviderCore.cpp" />
     <ClCompile Include="ProviderCredentialFields.cpp" />
     <ClCompile Include="ProviderJson.cpp" />
     <ClCompile Include="ProviderPipe.cpp" />
+    <ClCompile Include="ProviderPipeTransport.cpp" />
     <ClCompile Include="ProviderSerialization.cpp" />
     <ClCompile Include="ProviderUtil.cpp" />
+    <ClCompile Include="SerializationAuth.cpp" />
     <ClCompile Include="Serialization.cpp" />
   </ItemGroup>
   <ItemGroup>
