@@ -106,22 +106,25 @@ CP는 Broker에서 아래 메시지를 수신합니다.
 - 성공 시 `CPGSR_RETURN_CREDENTIAL_FINISHED` 경로로 정상 진입하는지 확인
 
 ## 11. 빌드/배포 최소 절차
+기준 경로: 이 README가 있는 저장소 루트(`Dot1xCP/`)
+
 1. CP 빌드
 - Visual Studio: `x64` + `Release`
 - 또는 명령:
 ```bat
-msbuild Dot1xCP\Dot1xCP.sln /p:Configuration=Release /p:Platform=x64
+msbuild Dot1xCP.sln /p:Configuration=Release /p:Platform=x64
 ```
-- 산출물: `Dot1xCP\x64\Release\Dot1xCP.dll`
+- 산출물: `x64\Release\Dot1xCP.dll`
 
 2. Broker 빌드
+- Broker 소스가 별도 저장소/폴더인 경우, 해당 루트에서 실행:
 ```bat
-dotnet publish Dot1xBroker\Dot1xBroker.csproj -c Release -f net8.0-windows
+dotnet publish Dot1xBroker.csproj -c Release -f net8.0-windows
 ```
-- 산출물: `Dot1xBroker\bin\Release\net8.0-windows\`
+- 산출물: `bin\Release\net8.0-windows\`
 
 3. 설치
-- `Dot1xCP_Setup.iss`로 설치 패키지 생성 후 설치
+- 설치 패키징(`Dot1xCP_Setup.iss`)은 설치 스크립트 저장소/폴더에서 수행
 - 설치 경로 기준:
   - CP: `C:\Program Files\Dot1xCP\Dot1xCP.dll`
   - Broker: `C:\Program Files\Dot1xCP\Broker\`
