@@ -32,13 +32,6 @@ ULONG testCPProvider::Release() { ULONG c = InterlockedDecrement(&_ref); if (!c)
 HRESULT testCPProvider::SetUsageScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus, DWORD)
 {
     if (cpus == CPUS_LOGON) {
-        if (HasActiveConsoleUser()) {
-            _cpus = CPUS_INVALID;
-            CloseBrokerSessionNow(0, L"SetUsageScenario: LOGON with active console user -> close broker session");
-            CpLog(L"SetUsageScenario: LOGON with active console user -> not supported");
-            return E_NOTIMPL;
-        }
-
         _cpus = cpus;
         if (!IsBrokerSessionActive()) {
             CloseBrokerSessionNow(0, L"SetUsageScenario: LOGON init -> close stale broker session");
