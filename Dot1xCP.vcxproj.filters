@@ -13,6 +13,36 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="소스 파일\auth">
+      <UniqueIdentifier>{F6DC32B2-1694-46B7-80ED-EF1173869EE5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="소스 파일\broker">
+      <UniqueIdentifier>{EA00B9D2-D698-42AF-9501-6296818002A6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="소스 파일\common">
+      <UniqueIdentifier>{1BDE4AB0-3B1E-47B4-87DB-A79D1FA67DCE}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="소스 파일\core">
+      <UniqueIdentifier>{CB768D3D-28D8-4806-B758-BBECA14C9258}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="소스 파일\com">
+      <UniqueIdentifier>{6539AB6A-4A21-4CE8-A8E7-4E0777848772}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\auth">
+      <UniqueIdentifier>{E955D572-D549-4051-9BC4-6ECF57D67B84}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\broker">
+      <UniqueIdentifier>{7A6DB7AF-2F25-42F2-8230-507C1FD03C68}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\common">
+      <UniqueIdentifier>{34D31C6B-F8C1-486D-8ABC-B5F96389D150}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\core">
+      <UniqueIdentifier>{0E897DF0-7FC3-4D2F-8B6F-7E56E12B10F4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\com">
+      <UniqueIdentifier>{852D7938-C1AF-4CB8-B06A-F2C20D71442E}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -21,82 +51,84 @@
     <ClInclude Include="pch.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="ClassFactory.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="src\com\ClassFactory.h">
+      <Filter>헤더 파일\com</Filter>
     </ClInclude>
-    <ClInclude Include="Provider.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="src\core\Provider.h">
+      <Filter>헤더 파일\core</Filter>
     </ClInclude>
-    <ClInclude Include="Serialization.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="src\auth\Serialization.h">
+      <Filter>헤더 파일\auth</Filter>
     </ClInclude>
-    <ClInclude Include="SimpleCpGuids.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="src\com\SimpleCpGuids.h">
+      <Filter>헤더 파일\com</Filter>
     </ClInclude>
-    <ClInclude Include="CpLog.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="src\common\CpLog.h">
+      <Filter>헤더 파일\common</Filter>
     </ClInclude>
-    <ClInclude Include="ProviderJson.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="src\broker\ProviderJson.h">
+      <Filter>헤더 파일\broker</Filter>
     </ClInclude>
-    <ClInclude Include="ProviderPipe.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="src\broker\ProviderPipe.h">
+      <Filter>헤더 파일\broker</Filter>
     </ClInclude>
-    <ClInclude Include="ProviderUtil.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="src\common\ProviderUtil.h">
+      <Filter>헤더 파일\common</Filter>
     </ClInclude>
-    <ClInclude Include="ProviderBrokerSession.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="src\broker\ProviderBrokerSession.h">
+      <Filter>헤더 파일\broker</Filter>
     </ClInclude>
-    <ClInclude Include="SerializationAuth.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="src\auth\SerializationAuth.h">
+      <Filter>헤더 파일\auth</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="dllmain.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\com\dllmain.cpp">
+      <Filter>소스 파일\com</Filter>
     </ClCompile>
     <ClCompile Include="pch.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="ClassFactory.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\com\ClassFactory.cpp">
+      <Filter>소스 파일\com</Filter>
     </ClCompile>
-    <ClCompile Include="Provider.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\core\Provider.cpp">
+      <Filter>소스 파일\core</Filter>
     </ClCompile>
-    <ClCompile Include="Serialization.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\auth\Serialization.cpp">
+      <Filter>소스 파일\auth</Filter>
     </ClCompile>
-    <ClCompile Include="ProviderJson.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\broker\ProviderJson.cpp">
+      <Filter>소스 파일\broker</Filter>
     </ClCompile>
-    <ClCompile Include="ProviderPipe.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\broker\ProviderPipe.cpp">
+      <Filter>소스 파일\broker</Filter>
     </ClCompile>
-    <ClCompile Include="ProviderUtil.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\common\ProviderUtil.cpp">
+      <Filter>소스 파일\common</Filter>
     </ClCompile>
-    <ClCompile Include="ProviderCredentialFields.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\core\ProviderCredentialFields.cpp">
+      <Filter>소스 파일\core</Filter>
     </ClCompile>
-    <ClCompile Include="ProviderSerialization.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\broker\ProviderSerialization.cpp">
+      <Filter>소스 파일\broker</Filter>
     </ClCompile>
-    <ClCompile Include="ProviderCore.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\core\ProviderCore.cpp">
+      <Filter>소스 파일\core</Filter>
     </ClCompile>
-    <ClCompile Include="ProviderBrokerSession.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\broker\ProviderBrokerSession.cpp">
+      <Filter>소스 파일\broker</Filter>
     </ClCompile>
-    <ClCompile Include="ProviderPipeTransport.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\broker\ProviderPipeTransport.cpp">
+      <Filter>소스 파일\broker</Filter>
     </ClCompile>
-    <ClCompile Include="SerializationAuth.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="src\auth\SerializationAuth.cpp">
+      <Filter>소스 파일\auth</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="exports.def" />
+    <None Include="src\com\exports.def">
+      <Filter>소스 파일\com</Filter>
+    </None>
   </ItemGroup>
 </Project>
